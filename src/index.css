@@ -1,0 +1,62 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-brand-pink: #FFB7C5;
+  --color-brand-pink-light: #FFE5E9;
+  --color-brand-pink-dark: #FF8BA7;
+  --color-brand-cream: #FFFDD0;
+  --color-brand-cream-light: #FFFEEE;
+  
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-cream-light text-slate-800 font-sans;
+  }
+}
+
+.bakery-card {
+  @apply bg-white rounded-3xl shadow-sm border border-brand-pink-light/30 transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
+}
+
+.btn-primary {
+  @apply bg-brand-pink text-white px-6 py-3 rounded-full font-semibold transition-all hover:bg-brand-pink-dark hover:scale-105 active:scale-95 shadow-md hover:shadow-lg;
+}
+
+.btn-secondary {
+  @apply bg-white text-brand-pink border-2 border-brand-pink px-6 py-3 rounded-full font-semibold transition-all hover:bg-brand-pink-light active:scale-95;
+}
+
+.gradient-pink {
+  background: linear-gradient(135deg, #FFB7C5 0%, #FF8BA7 100%);
+}
+
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-brand-pink-dark to-brand-pink;
+}
+
+.markdown-body {
+  @apply text-sm leading-relaxed;
+}
+
+.markdown-body p {
+  @apply mb-2 last:mb-0;
+}
+
+.markdown-body strong {
+  @apply font-bold text-slate-900;
+}
+
+.markdown-body ul, .markdown-body ol {
+  @apply ml-4 mb-2 list-disc;
+}
+
+.markdown-body li {
+  @apply mb-1;
+}
