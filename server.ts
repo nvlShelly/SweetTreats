@@ -96,14 +96,16 @@ async function startServer() {
 
   // API Route for AI Chatbot
   app.post("/api/chat", async (req, res) => {
-    // Set headers for Server-Sent Events (SSE) immediately to keep stream active
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+    // Set headers and status code for Server Sent Events immediately with writeHead
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no'
+    });
 
     try {
-      const { message, history = [] } = req.body;
+      const { message, history = [] } = req.body || {};
       
       const isPlaceholder = checkIsPlaceholderKey();
       if (isPlaceholder) {

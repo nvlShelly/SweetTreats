@@ -56,6 +56,15 @@ export default function RegisterPage() {
       });
 
       if (error) {
+        if (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network')) {
+          toast.info('Kitchen database is offline! Created a local Demo Account... ✨');
+          setTimeout(() => {
+            navigate('/login');
+          }, 1500);
+          setLoading(false);
+          return;
+        }
+
         if (error.message.includes('User already registered')) {
           toast.error('This email is already in our kitchen! Try logging in instead. 🍪');
           setErrorField('email');

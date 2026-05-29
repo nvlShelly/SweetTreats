@@ -27,35 +27,9 @@ export default function LoginPage() {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      if (!isDemoMode) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) {
-          if (error.message.includes('Invalid login credentials')) {
-            toast.error('Invalid email or password! Please check your credentials or join now. 🧁');
-          } else {
-            toast.error(error.message || 'Login failed. Please try again!');
-          }
-          setLoading(false);
-          return;
-        }
-
-        toast.success(`Welcome back! 🍰`);
-        setTimeout(() => {
-          navigate('/app');
-        }, 300);
-        return;
-      }
-
-      // Fallback/Demo mode handling
-      const role: 'admin' | 'user' = email.toLowerCase().includes('admin') ? 'admin' : 'user';
-      const userId = 'demo-uuid-' + email.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const runDemoLoginFallback = (targetEmail: string) => {
+      const role: 'admin' | 'user' = targetEmail.toLowerCase().includes('admin') ? 'admin' : 'user';
+      const userId = 'demo-uuid-' + targetEmail.toLowerCase().replace(/[^a-z0-9]/g, '-');
       
       const savedProfileStr = localStorage.getItem(`sweet_treats_profile_${userId}`);
       let mockProfile;
@@ -64,10 +38,10 @@ export default function LoginPage() {
       } else {
         mockProfile = {
           id: userId,
-          email: email,
-          full_name: email.split('@')[0].charAt(0).toUpperCase() + email.split('@')[0].slice(1),
+          email: targetEmail,
+          full_name: targetEmail.split('@')[0].charAt(0).toUpperCase() + targetEmail.split('@')[0].slice(1),
           role: role,
-          avatar_url: `https://ui-avatars.com/api/?name=${email}&background=FFB7C5&color=fff`,
+          avatar_url: `https://ui-avatars.com/api/?name=${targetEmail}&background=FFB7C5&color=fff`,
           bio: '',
           updated_at: new Date().toISOString()
         };
@@ -79,6 +53,54 @@ export default function LoginPage() {
       setTimeout(() => {
         navigate('/app');
       }, 300);
+    };
+
+    setLoading(true);
+
+    try {
+      if (!isDemoMode) {
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+
+          if (error) {
+            if (error.message.toLowerCase().includes('fetch') || error.message.toLowerCase().includes('network')) {
+              console.warn('Network error or Supabase unreachable, falling back to Demo Mode:', error.message);
+              toast.info('Kitchen database is offline! Logging in to local Demo account... 🍰');
+              runDemoLoginFallback(email);
+              return;
+            }
+
+            if (error.message.includes('Invalid login credentials')) {
+              toast.error('Invalid email or password! Please check your credentials or join now. 🧁');
+            } else {
+              toast.error(error.message || 'Login failed. Please try again!');
+            }
+            setLoading(false);
+            return;
+          }
+
+          toast.success(`Welcome back! 🍰`);
+          setTimeout(() => {
+            navigate('/app');
+          }, 300);
+          return;
+        } catch (authException: any) {
+          console.warn('SignIn exception caught, checking for network issues:', authException);
+          const errMsg = authException.message || '';
+          if (errMsg.toLowerCase().includes('fetch') || errMsg.toLowerCase().includes('network')) {
+            toast.info('Kitchen database is offline! Logging in to local Demo account... 🍰');
+            runDemoLoginFallback(email);
+            return;
+          }
+          throw authException;
+        }
+      }
+
+      // Default/Fallback/Demo mode handling
+      runDemoLoginFallback(email);
     } catch (error: any) {
       console.warn('Authentication error:', error);
       toast.error('Something went wrong. Please try again!');
