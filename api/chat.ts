@@ -1,4 +1,4 @@
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import type { IncomingMessage, ServerResponse } from "http";
 
 function checkIsPlaceholderKey() {
@@ -83,11 +83,15 @@ async function streamFallbackResponse(res: ServerResponse, message: string, keyI
   }
 }
 
-// Handler helper to read stream of request body
+// Handler helper to read stream of request body safely
 function getRequestBody(req: IncomingMessage): Promise<any> {
   if ((req as any).body !== undefined) {
     const rawBody = (req as any).body;
     return Promise.resolve(typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody);
+  }
+  // If the stream is already not readable, resolve immediately to prevent hanging
+  if (!req.readable || req.complete) {
+    return Promise.resolve({});
   }
   return new Promise((resolve, reject) => {
     let body = "";
@@ -104,6 +108,10 @@ function getRequestBody(req: IncomingMessage): Promise<any> {
     req.on("error", (err) => {
       reject(err);
     });
+    // Add a safety timeout so it never hangs infinitely
+    setTimeout(() => {
+      resolve({});
+    }, 10000);
   });
 }
 
@@ -186,9 +194,6 @@ Rules:
 - Keep answers brief, tidy, and beautifully formatted with Markdown, utilizing bullets and bold text.
 - Spread love and high energy with emojis: 🍰, ✨, 🧁, 🍪, 🍩, 🥐.
 - ALWAYS respond in the same language as the user (default to Indonesian if the user writes in Indonesian, e.g. "Halo Chef!").`,
-          thinkingConfig: {
-            thinkingLevel: ThinkingLevel.LOW
-          }
         },
       });
 

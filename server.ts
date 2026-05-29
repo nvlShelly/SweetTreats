@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -158,9 +158,6 @@ Rules:
 - Keep answers brief, tidy, and beautifully formatted with Markdown, utilizing bullets and bold text.
 - Spread love and high energy with emojis: 🍰, ✨, 🧁, 🍪, 🍩, 🥐.
 - ALWAYS respond in the same language as the user (default to Indonesian if the user writes in Indonesian, e.g. "Halo Chef!").`,
-            thinkingConfig: {
-              thinkingLevel: ThinkingLevel.LOW
-            }
           },
         });
 
