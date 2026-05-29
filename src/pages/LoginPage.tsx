@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isDemoMode } from '../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, Lock, ArrowRight, Github, Chrome, AlertCircle } from 'lucide-react';
@@ -30,7 +30,30 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 1. Always attempt demo entry first for the best preview experience
+      if (!isDemoMode) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) {
+          if (error.message.includes('Invalid login credentials')) {
+            toast.error('Invalid email or password! Please check your credentials or join now. 🧁');
+          } else {
+            toast.error(error.message || 'Login failed. Please try again!');
+          }
+          setLoading(false);
+          return;
+        }
+
+        toast.success(`Welcome back! 🍰`);
+        setTimeout(() => {
+          navigate('/app');
+        }, 300);
+        return;
+      }
+
+      // Fallback/Demo mode handling
       const role: 'admin' | 'user' = email.toLowerCase().includes('admin') ? 'admin' : 'user';
       const userId = 'demo-uuid-' + email.toLowerCase().replace(/[^a-z0-9]/g, '-');
       
@@ -54,9 +77,10 @@ export default function LoginPage() {
       toast.success(`Welcome back! 🍰`);
       
       setTimeout(() => {
-        window.location.href = '/app';
+        navigate('/app');
       }, 300);
     } catch (error: any) {
+      console.warn('Authentication error:', error);
       toast.error('Something went wrong. Please try again!');
       setLoading(false);
     }

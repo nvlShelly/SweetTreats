@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isDemoMode } from '../lib/supabase';
 import type { Profile } from '../types';
 import type { User } from '@supabase/supabase-js';
 
@@ -35,6 +35,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(() => !localStorage.getItem('sweet_treats_demo_user'));
 
   useEffect(() => {
+    if (isDemoMode) {
+      setLoading(false);
+      return;
+    }
+
     const checkSession = async () => {
       // 1. Jika sudah ada sesi demo (sync), kita hanya perlu background check untuk Supabase
       if (user && !loading) {
@@ -92,6 +97,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function fetchProfile(uid: string) {
+    if (isDemoMode) {
+      setLoading(false);
+      return;
+    }
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -99,10 +108,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', uid)
         .single();
       
-      if (error) throw error;
-      setProfile(data);
+      if (error) {
+        // If profile doesn't exist (no row returned), create it!
+        if (error.code === 'PGRST116' || error.message?.includes('rows') || error.message?.includes('no rows')) {
+          const emailStr = user?.email || '';
+          const newProfile: Profile = {
+            id: uid,
+            username: emailStr ? emailStr.split('@')[0] : 'user_chef',
+            full_name: user?.user_metadata?.full_name || emailStr.split('@')[0] || 'User',
+            role: 'user',
+            avatar_url: `https://ui-avatars.com/api/?name=${emailStr || 'User'}&background=FFB7C5&color=fff`,
+            bio: '',
+            updated_at: new Date().toISOString()
+          };
+          const { error: insertError } = await supabase.from('profiles').upsert(newProfile);
+          if (insertError) console.warn('Could not insert profile in database:', insertError);
+          setProfile(newProfile);
+        } else {
+          throw error;
+        }
+      } else {
+        setProfile(data);
+      }
     } catch (e) {
-      console.error('Error fetching profile:', e);
+      console.error('Error fetching profile from Supabase:', e);
+      // Fallback local option to avoid blocking the user
+      const localProfile = localStorage.getItem(`sweet_treats_profile_${uid}`);
+      if (localProfile) {
+        setProfile(JSON.parse(localProfile));
+      } else {
+        const emailStr = user?.email || '';
+        setProfile({
+          id: uid,
+          username: emailStr ? emailStr.split('@')[0] : 'user_chef',
+          full_name: user?.user_metadata?.full_name || 'User',
+          role: 'user',
+          avatar_url: `https://ui-avatars.com/api/?name=${emailStr || 'User'}&background=FFB7C5&color=fff`,
+          bio: '',
+          updated_at: new Date().toISOString()
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -112,6 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('sweet_treats_demo_user');
     setUser(null);
     setProfile(null);
+    if (isDemoMode) return;
     try {
       // Run signOut in try/catch and allow it to be async in the background if necessary
       supabase.auth.signOut().catch(err => {
@@ -122,7 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateProfile = (updatedFields: Partial<Profile>) => {
+  const updateProfile = async (updatedFields: Partial<Profile>) => {
     if (!profile) return;
     const updated = {
       ...profile,
@@ -137,6 +183,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Save to permanent profile storage mapping by user ID
     if (profile.id) {
       localStorage.setItem(`sweet_treats_profile_${profile.id}`, JSON.stringify(updated));
+    }
+
+    if (!isDemoMode && user) {
+      try {
+        await supabase
+          .from('profiles')
+          .upsert(updated);
+      } catch (e) {
+        console.warn('Failed to sync profile update to Supabase database:', e);
+      }
     }
   };
 

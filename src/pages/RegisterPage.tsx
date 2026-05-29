@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isDemoMode } from '../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Mail, Lock, User, ArrowRight, Github, Chrome, AlertCircle } from 'lucide-react';
@@ -34,6 +34,15 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
+
+    if (isDemoMode) {
+      toast.success('Demo Account Created! ✨ Redirecting to login...');
+      setTimeout(() => {
+        navigate('/login');
+      }, 1000);
+      setLoading(false);
+      return;
+    }
 
     try {
       const { data, error } = await supabase.auth.signUp({

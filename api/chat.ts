@@ -1,10 +1,5 @@
-import express from "express";
-import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import dotenv from "dotenv";
-
-dotenv.config();
+import type { IncomingMessage, ServerResponse } from "http";
 
 function checkIsPlaceholderKey() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -24,14 +19,14 @@ function getGeminiClient() {
     apiKey,
     httpOptions: {
       headers: {
-        'User-Agent': 'aistudio-build',
+        'User-Agent': 'aistudio-build-vercel',
       }
     }
   });
 }
 
 // Custom simple keyword-based stream fallback
-async function streamFallbackResponse(res: any, message: string, keyIssue: boolean = false) {
+async function streamFallbackResponse(res: ServerResponse, message: string, keyIssue: boolean = false) {
   const isIndo = /halo|hai|resep|bagaimana|cara|simpan|suka|makanan|kue|rasa/i.test(message) || !/[a-zA-Z]/i.test(message);
   
   let responseText = "";
@@ -63,7 +58,7 @@ async function streamFallbackResponse(res: any, message: string, keyIssue: boole
       : `### Korean Bento Mini Cake 🎂🌸\n\nTrendy, cute, and highly customizable! These lunchbox cakes are extremely fun to style.\n\n**Chef Sweetie's Baker Tip:**\n- **Frosting:** Use high-quality butter for your buttercream to achieve a smooth, stable piping texture.\n- **Pastel Colors:** Use gel food coloring sparingly on a toothpick to get those gorgeous, dreamy pastel shades.\n\nLet me know if you need help planning your design! ✨`;
   } else if (msgLower.includes("macaron") || msgLower.includes("lavender") || msgLower.includes("lemon")) {
     responseText = isIndo
-      ? `### Lavender Macaron Towers 🗼💜\n\nKue Prancis legendaris dengan aroma lavender manis dan ganache madu lemon yang segar.\n\n**Tips Khusus dari Chef Sweetie:**\n- **Kulit Kering:** Biarkan macarons yang sudah dicetak berdiam selama 30-45 menit hingga permukaannya kering dan tidak lengket disentuh sebelum dipanggang. Ini wajib garansi mengeluarkan "kaki" macaron yang indah!\n- **Tepung Almond Saring:** Selalu saring tepung almond dan gula halus minimal 2 kali agar permukaannya mulus berkilau.\n\nKamu bisa mencoba resep sulit ini secara perlahan-lahan ya! 👩‍🍳`
+      ? `### Lavender Macaron Towers 🗼💜\n\nKue Prancis legendaris dengan aroma lavender manis dan ganache madu lemon yang segar.\n\n**Tips Khusus dari Chef Sweetie:**\n- **Kulit Kering:** Biarkan macarons yang sudah dicetak berdiam selama 30-45 menit hingga permukaannya kering dan tidak lengket disentuh sebelum dipanggang. Ini wajib garansi mengeluarkan "kaki" macaron yang indah!\n- **Tepung Almond Saring:** Selalu saring tepung almond dan gula halus minimal 2 kali agar permukaannya mulus berkilau.\n\nKamu bisa mencoba resep sulit ini secara perlahan-laman ya! 👩‍🍳`
       : `### Lavender Macaron Towers 🗼💜\n\nLegendary French macarons with beautiful lavender-scented shells and a bright lemon-honey ganache.\n\n**Chef Sweetie's Baker Tip:**\n- **Drying Stage:** Let the piped shells rest for 30-45 minutes until a dull skin forms. It shouldn't stick to your finger. This is crucial for forming the macaron "feet"!\n- **Sifting:** Sift almond flour and powdered sugar twice to ensure smooth, glossy, bump-free shells.\n\nTake your time with this hard recipe, you can do it! 👩‍🍳`;
   } else if (msgLower.includes("matcha") || msgLower.includes("green tea") || msgLower.includes("teh hijau") || msgLower.includes("muffin")) {
     responseText = isIndo
@@ -88,57 +83,90 @@ async function streamFallbackResponse(res: any, message: string, keyIssue: boole
   }
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+// Handler helper to read stream of request body
+function getRequestBody(req: IncomingMessage): Promise<any> {
+  if ((req as any).body !== undefined) {
+    const rawBody = (req as any).body;
+    return Promise.resolve(typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody);
+  }
+  return new Promise((resolve, reject) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      try {
+        resolve(JSON.parse(body));
+      } catch (e) {
+        resolve({});
+      }
+    });
+    req.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
 
-  app.use(express.json());
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  // ONLY allow POST requests
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Method Not Allowed" }));
+    return;
+  }
 
-  // API Route for AI Chatbot
-  app.post("/api/chat", async (req, res) => {
-    // Set headers for Server-Sent Events (SSE) immediately to keep stream active
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+  // Set headers for Server-Sent Events (SSE) streaming immediately
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+
+  try {
+    const body = await getRequestBody(req);
+    const { message, history = [] } = body;
+
+    if (!message) {
+      res.write(`data: ${JSON.stringify({ error: "Message is required" })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    const isPlaceholder = checkIsPlaceholderKey();
+    if (isPlaceholder) {
+      await streamFallbackResponse(res, message, false);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    let ai;
+    try {
+      ai = getGeminiClient();
+    } catch (clientErr) {
+      await streamFallbackResponse(res, message, true);
+      res.write("data: [DONE]\n\n");
+      res.end();
+      return;
+    }
+
+    // Format history for Gemini SDK
+    const contents = [
+      ...history.map((msg: any) => ({
+        role: msg.role === 'assistant' ? 'model' : msg.role,
+        parts: [{ text: msg.content }]
+      })),
+      { role: 'user', parts: [{ text: message }] }
+    ];
 
     try {
-      const { message, history = [] } = req.body;
-      
-      const isPlaceholder = checkIsPlaceholderKey();
-      if (isPlaceholder) {
-        await streamFallbackResponse(res, message, false);
-        res.write("data: [DONE]\n\n");
-        res.end();
-        return;
-      }
-
-      let ai;
-      try {
-        ai = getGeminiClient();
-      } catch (clientErr) {
-        await streamFallbackResponse(res, message, true);
-        res.write("data: [DONE]\n\n");
-        res.end();
-        return;
-      }
-
-      // Format history for Gemini SDK
-      // history is expected to be an array of { role: 'user' | 'model', content: string }
-      const contents = [
-        ...history.map((msg: any) => ({
-          role: msg.role === 'assistant' ? 'model' : msg.role,
-          parts: [{ text: msg.content }]
-        })),
-        { role: 'user', parts: [{ text: message }] }
-      ];
-
-      try {
-        const responseStream = await ai.models.generateContentStream({
-          model: "gemini-3.5-flash",
-          contents,
-          config: {
-            systemInstruction: `You are 'Chef Sweetie', the ultra-fast, professional, and super friendly AI head baker of SweetTreats. 
+      const responseStream = await ai.models.generateContentStream({
+        model: "gemini-3.5-flash",
+        contents,
+        config: {
+          systemInstruction: `You are 'Chef Sweetie', the ultra-fast, professional, and super friendly AI head baker of SweetTreats. 
 Your goal is to provide concise, delightful, extremely accurate, and professional baking advice.
 
 Important Context:
@@ -158,55 +186,32 @@ Rules:
 - Keep answers brief, tidy, and beautifully formatted with Markdown, utilizing bullets and bold text.
 - Spread love and high energy with emojis: 🍰, ✨, 🧁, 🍪, 🍩, 🥐.
 - ALWAYS respond in the same language as the user (default to Indonesian if the user writes in Indonesian, e.g. "Halo Chef!").`,
-            thinkingConfig: {
-              thinkingLevel: ThinkingLevel.LOW
-            }
-          },
-        });
-
-        for await (const chunk of responseStream) {
-          if (chunk.text) {
-            res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+          thinkingConfig: {
+            thinkingLevel: ThinkingLevel.LOW
           }
-        }
-      } catch (geminiApiErr: any) {
-        console.error("Gemini Content Stream failed, falling back gracefully:", geminiApiErr);
-        // If content generation itself fails (e.g., bad key, billing issue, temporary API outage), we do not close the stream silently or throw 500 error, instead fallback gracefully:
-        await streamFallbackResponse(res, message, true);
-      }
+        },
+      });
 
+      for await (const chunk of responseStream) {
+        if (chunk.text) {
+          res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+        }
+      }
+    } catch (geminiApiErr: any) {
+      console.error("Gemini Content Stream failed, falling back gracefully:", geminiApiErr);
+      await streamFallbackResponse(res, message, true);
+    }
+
+    res.write("data: [DONE]\n\n");
+    res.end();
+  } catch (error: any) {
+    console.error("Chat API Error:", error);
+    try {
+      res.write(`data: ${JSON.stringify({ error: error.message || "Internal stream error" })}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
-    } catch (error: any) {
-      console.error("Chat API Error:", error);
-      try {
-        res.write(`data: ${JSON.stringify({ error: error.message || "Internal stream error" })}\n\n`);
-        res.write("data: [DONE]\n\n");
-        res.end();
-      } catch (e) {
-        // Safe check
-      }
+    } catch (e) {
+      // Safe check
     }
-  });
-
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
   }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
 }
-
-startServer();
